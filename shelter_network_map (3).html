@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Shelter Network — Prescott, AZ</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  html, body { margin:0; padding:0; height:100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  #wrap { display:flex; height:100vh; }
+  #map { flex: 1; }
+  #panel {
+    width: 340px; background: #f8f9fa; border-left: 1px solid #dee2e6;
+    overflow-y: auto; padding: 16px; font-size: 13px; color: #212529;
+  }
+  #panel h1 { font-size: 16px; margin: 0 0 4px 0; }
+  #panel .sub { color:#6c757d; font-size:11px; margin-bottom: 14px; }
+  .stat-grid { display:grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 14px;}
+  .stat { background: #fff; padding: 8px; border-radius: 6px; border:1px solid #e9ecef; }
+  .stat .v { font-size: 16px; font-weight: 600; }
+  .stat .l { font-size: 10px; color:#6c757d; text-transform: uppercase; letter-spacing: .5px; }
+  .section { margin-bottom: 14px; }
+  .section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: #495057; margin: 0 0 6px 0; }
+  .legend-row { display:flex; align-items:center; gap:8px; margin: 4px 0; font-size: 12px; }
+  .swatch { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.3); }
+  .line-swatch { width: 24px; height: 0; border-top: 2px solid; }
+  label.toggle { display:flex; align-items:center; gap:6px; padding: 4px 0; cursor:pointer; }
+  label.toggle input { margin: 0; }
+  #info {
+    background: #fff; padding: 10px; border-radius: 6px; border: 1px solid #e9ecef;
+    font-size: 12px; line-height: 1.5; min-height: 60px;
+  }
+  #info .title { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+  #info .row { display:flex; justify-content: space-between; padding: 2px 0; }
+  #info .row .k { color: #6c757d; }
+  #info .empty { color: #adb5bd; font-style: italic; }
+  .util-bar { height: 6px; background: #e9ecef; border-radius: 3px; overflow:hidden; margin-top: 4px; }
+  .util-bar > div { height:100%; }
+  .leaflet-popup-content { font-size: 12px; line-height: 1.4; }
+  .leaflet-popup-content b { color: #212529; }
+  button.btn {
+    width: 100%; padding: 6px; margin-top: 4px; font-size: 12px;
+    background: #fff; border: 1px solid #ced4da; border-radius: 4px; cursor: pointer;
+  }
+  button.btn:hover { background: #e9ecef; }
+  button.btn.active { background: #0d6efd; color: white; border-color: #0d6efd; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="map"></div>
+  <div id="panel">
+    <h1>Emergency Shelter Network</h1>
+    <div class="sub">Prescott / Bradshaw Mountain Region, Arizona</div>
+
+    <div class="stat-grid">
+      <div class="stat"><div class="v" id="s-villages">—</div><div class="l">Villages</div></div>
+      <div class="stat"><div class="v" id="s-pop">—</div><div class="l">Total Population</div></div>
+      <div class="stat"><div class="v" id="s-prim">—</div><div class="l">Primary Shelters</div></div>
+      <div class="stat"><div class="v" id="s-sec">—</div><div class="l">Secondary Shelters</div></div>
+    </div>
+
+    <div class="section">
+      <h2>View Mode</h2>
+      <button class="btn active" id="m-all" onclick="setMode('all')">All assignments</button>
+      <button class="btn" id="m-main" onclick="setMode('main')">Main routes only</button>
+      <button class="btn" id="m-backup" onclick="setMode('backup')">Backup routes only</button>
+      <button class="btn" id="m-flow" onclick="setMode('flow')">Primary→Secondary flow</button>
+    </div>
+
+    <div class="section">
+      <h2>Layers</h2>
+      <label class="toggle"><input type="checkbox" id="t-villages" checked> Villages</label>
+      <label class="toggle"><input type="checkbox" id="t-primary" checked> Primary shelters</label>
+      <label class="toggle"><input type="checkbox" id="t-secondary" checked> Secondary shelters</label>
+      <label class="toggle"><input type="checkbox" id="t-labels"> Shelter name labels</label>
+    </div>
+
+    <div class="section">
+      <h2>Legend</h2>
+      <div class="legend-row"><span class="swatch" style="background:#adb5bd; border:1px solid #495057; width:10px; height:10px;"></span> Village</div>
+      <div class="legend-row"><span style="display:inline-block; width:14px; height:14px; background:#ffc107; border:2px solid #003d80; box-sizing:border-box;"></span> Primary shelter (square)</div>
+      <div class="legend-row"><span class="swatch" style="background:#ffc107; border:2.5px solid #7a0010; width:18px; height:18px;"></span> Secondary shelter (large circle)</div>
+
+      <div style="margin-top:8px; font-size:11px; color:#6c757d;">Fill color = utilization:</div>
+      <div class="legend-row"><span class="swatch" style="background:#17a2b8; width:10px; height:10px;"></span> Low (&lt;60%)</div>
+      <div class="legend-row"><span class="swatch" style="background:#ffc107; width:10px; height:10px;"></span> Medium (60–85%)</div>
+      <div class="legend-row"><span class="swatch" style="background:#dc3545; width:10px; height:10px;"></span> High (&gt;85%)</div>
+
+      <div style="margin-top:8px;"></div>
+      <div class="legend-row"><span class="line-swatch" style="border-color:#0d6efd"></span> Main route</div>
+      <div class="legend-row"><span class="line-swatch" style="border-color:#fd7e14; border-top-style:dashed;"></span> Backup route</div>
+      <div class="legend-row"><span class="line-swatch" style="border-color:#dc3545; border-top-width:3px;"></span> Primary→Secondary flow</div>
+
+      <div style="font-size:11px; color:#6c757d; margin-top:6px;">Marker size scales with capacity.</div>
+    </div>
+
+    <div class="section">
+      <h2>Selection</h2>
+      <div id="info"><span class="empty">Click a village or shelter for details. Click a shelter to highlight all villages assigned to it.</span></div>
+    </div>
+
+    <div class="section" style="font-size:11px; color:#6c757d;">
+      Tip: hover a village to see its assignment lines highlighted.
+    </div>
+  </div>
+</div>
+
+<script>
+const DATA = {"primary": [{"primary_id": 14, "name": "Granite Mountain Middle School", "lon": -112.49716616937204, "lat": 34.57377165067796, "capacity": 5000, "risk": 0.2, "main_pop": 4505, "backup_pop": 0, "effective_load": 4505.0, "utilization": 0.901}, {"primary_id": 16, "name": "Bradshaw Mountain Middle School", "lon": -112.253117997528, "lat": 34.54445359324926, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 4268, "effective_load": 1280.4, "utilization": 0.25608}, {"primary_id": 17, "name": "primary_shelter", "lon": -112.313717970461, "lat": 34.603561994754564, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 4635, "effective_load": 1390.5, "utilization": 0.2781}, {"primary_id": 18, "name": "Mile High Middle School", "lon": -112.4720425520972, "lat": 34.53795683185065, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 4906, "effective_load": 1471.8, "utilization": 0.29436}, {"primary_id": 21, "name": "Granville Elementary School", "lon": -112.34645998129947, "lat": 34.617647701412125, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 4335, "effective_load": 1300.5, "utilization": 0.2601}, {"primary_id": 22, "name": "Taylor Hicks Elementary School", "lon": -112.47262048200362, "lat": 34.57297523089784, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 3875, "effective_load": 1162.5, "utilization": 0.2325}, {"primary_id": 23, "name": "Prescott High School", "lon": -112.47786340748496, "lat": 34.56206449057599, "capacity": 5000, "risk": 0.2, "main_pop": 2488, "backup_pop": 0, "effective_load": 2488.0, "utilization": 0.4976}, {"primary_id": 25, "name": "Abia Judd Elementary School", "lon": -112.49809164118864, "lat": 34.571580967358834, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 4505, "effective_load": 1351.5, "utilization": 0.2703}, {"primary_id": 26, "name": "Chino Valley High School", "lon": -112.45125175172116, "lat": 34.747341546875155, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 3694, "effective_load": 1108.2, "utilization": 0.22164}, {"primary_id": 28, "name": "primary_shelter", "lon": -112.43123732688969, "lat": 34.59006091052226, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 4487, "effective_load": 1346.1, "utilization": 0.2692199999999999}, {"primary_id": 31, "name": "primary_shelter", "lon": -112.31440548053214, "lat": 34.63463815407475, "capacity": 5000, "risk": 0.2, "main_pop": 4514, "backup_pop": 571, "effective_load": 4685.3, "utilization": 0.93706}, {"primary_id": 61, "name": "The Church of Jesus Christ of Latter-day Saints", "lon": -112.32771458646484, "lat": 34.59996230930604, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 4048, "effective_load": 1214.4, "utilization": 0.2428799999999999}, {"primary_id": 62, "name": "Saint Germaine Catholic Church", "lon": -112.32585987079942, "lat": 34.59997602668064, "capacity": 5000, "risk": 0.2, "main_pop": 3788, "backup_pop": 0, "effective_load": 3788.0, "utilization": 0.7576}, {"primary_id": 78, "name": "primary_shelter", "lon": -112.40892358199464, "lat": 34.55263841007534, "capacity": 5000, "risk": 0.2, "main_pop": 2921, "backup_pop": 0, "effective_load": 2921.0, "utilization": 0.5842}, {"primary_id": 103, "name": "primary_shelter", "lon": -112.40840453693076, "lat": 34.5495256433035, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 2921, "effective_load": 876.3, "utilization": 0.17526}, {"primary_id": 181, "name": "primary_shelter", "lon": -112.4555054981393, "lat": 34.54789021863963, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 3712, "effective_load": 1113.6, "utilization": 0.2227199999999999}, {"primary_id": 183, "name": "primary_shelter", "lon": -112.457349634521, "lat": 34.55052250071828, "capacity": 5000, "risk": 0.2, "main_pop": 1690, "backup_pop": 930, "effective_load": 1969.0, "utilization": 0.3938}, {"primary_id": 193, "name": "primary_shelter", "lon": -112.51841624734, "lat": 34.6572546639019, "capacity": 4331, "risk": 0.2, "main_pop": 2196, "backup_pop": 0, "effective_load": 2196.0, "utilization": 0.5070422535211268}, {"primary_id": 199, "name": "primary_shelter", "lon": -112.23452422542016, "lat": 34.52921059484015, "capacity": 2100, "risk": 0.2, "main_pop": 0, "backup_pop": 1413, "effective_load": 423.9, "utilization": 0.2018571428571428}, {"primary_id": 200, "name": "primary_shelter", "lon": -112.24868452529314, "lat": 34.540150126837155, "capacity": 5000, "risk": 0.2, "main_pop": 3504, "backup_pop": 0, "effective_load": 3504.0, "utilization": 0.7008}, {"primary_id": 224, "name": "Metate Parking Area", "lon": -112.55089126064352, "lat": 34.61536229079713, "capacity": 2787, "risk": 0.2, "main_pop": 0, "backup_pop": 2196, "effective_load": 658.8, "utilization": 0.236383207750269}, {"primary_id": 244, "name": "Groom Creek Equestrian Trailhead", "lon": -112.44075942717666, "lat": 34.464627663107755, "capacity": 1267, "risk": 0.2, "main_pop": 653, "backup_pop": 705, "effective_load": 864.5, "utilization": 0.6823204419889503}, {"primary_id": 250, "name": "White Rock TraIlhead", "lon": -112.545784400607, "lat": 34.54606141728219, "capacity": 1631, "risk": 0.2, "main_pop": 0, "backup_pop": 1476, "effective_load": 442.8, "utilization": 0.2714898835070509}, {"primary_id": 252, "name": "primary_shelter", "lon": -112.24292162055757, "lat": 34.50317409997677, "capacity": 3537, "risk": 0.2, "main_pop": 2584, "backup_pop": 919, "effective_load": 2859.7, "utilization": 0.8085100367543115}, {"primary_id": 264, "name": "primary_shelter", "lon": -112.48081044959903, "lat": 34.578638824399725, "capacity": 5000, "risk": 0.2, "main_pop": 4467, "backup_pop": 0, "effective_load": 4467.0, "utilization": 0.8934}, {"primary_id": 265, "name": "primary_shelter", "lon": -112.47994548547632, "lat": 34.55879084693948, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 4491, "effective_load": 1347.3, "utilization": 0.26946}, {"primary_id": 298, "name": "primary_shelter", "lon": -112.4252044415662, "lat": 34.63161208831228, "capacity": 5000, "risk": 0.2, "main_pop": 1220, "backup_pop": 0, "effective_load": 1220.0, "utilization": 0.244}, {"primary_id": 301, "name": "primary_shelter", "lon": -112.42639241002576, "lat": 34.63110159347089, "capacity": 4786, "risk": 0.2, "main_pop": 0, "backup_pop": 1220, "effective_load": 366.0, "utilization": 0.0764730463852904}, {"primary_id": 313, "name": "primary_shelter", "lon": -112.42459164114534, "lat": 34.59134220267519, "capacity": 5000, "risk": 0.2, "main_pop": 4474, "backup_pop": 0, "effective_load": 4474.0, "utilization": 0.8948}, {"primary_id": 355, "name": "Copper Basin Trailhead Parking Lot", "lon": -112.54074744697309, "lat": 34.49865261210666, "capacity": 1272, "risk": 0.2, "main_pop": 789, "backup_pop": 836, "effective_load": 1039.8, "utilization": 0.8174528301886792}, {"primary_id": 468, "name": "primary_shelter", "lon": -112.32736521112348, "lat": 34.59022013323466, "capacity": 5000, "risk": 0.2, "main_pop": 3942, "backup_pop": 0, "effective_load": 3942.0, "utilization": 0.7884}, {"primary_id": 470, "name": "primary_shelter", "lon": -112.33123512030222, "lat": 34.59138549005612, "capacity": 2621, "risk": 0.2, "main_pop": 0, "backup_pop": 2031, "effective_load": 609.3, "utilization": 0.2324685234643266}, {"primary_id": 574, "name": "primary_shelter", "lon": -112.30789246888544, "lat": 34.58570972528986, "capacity": 3784, "risk": 0.2, "main_pop": 0, "backup_pop": 1914, "effective_load": 574.1999999999999, "utilization": 0.1517441860465116}, {"primary_id": 618, "name": "primary_shelter", "lon": -112.31617798211629, "lat": 34.63447486980537, "capacity": 3671, "risk": 0.2, "main_pop": 0, "backup_pop": 1694, "effective_load": 508.2, "utilization": 0.1384363933533097}, {"primary_id": 664, "name": "Boys & Girls Club", "lon": -112.46506043672969, "lat": 34.5356667152748, "capacity": 5000, "risk": 0.2, "main_pop": 4123, "backup_pop": 0, "effective_load": 4123.0, "utilization": 0.8246}, {"primary_id": 665, "name": "Arizona Pioneers' Home", "lon": -112.47422585403424, "lat": 34.53746678881927, "capacity": 5000, "risk": 0.2, "main_pop": 4736, "backup_pop": 874, "effective_load": 4998.2, "utilization": 0.99964}, {"primary_id": 678, "name": "Sunflower Park", "lon": -112.3380740841678, "lat": 34.60912722511681, "capacity": 5000, "risk": 0.2, "main_pop": 4272, "backup_pop": 0, "effective_load": 4272.0, "utilization": 0.8544}, {"primary_id": 679, "name": "Prescott Valley Community Center Park", "lon": -112.30033145788566, "lat": 34.61068785030133, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 3699, "effective_load": 1109.7, "utilization": 0.22194}, {"primary_id": 681, "name": "primary_shelter", "lon": -112.47202978124908, "lat": 34.61231440423504, "capacity": 5000, "risk": 0.2, "main_pop": 3067, "backup_pop": 0, "effective_load": 3067.0, "utilization": 0.6134}, {"primary_id": 683, "name": "Viewpoint Park", "lon": -112.33757138108068, "lat": 34.651366621534294, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 3721, "effective_load": 1116.3, "utilization": 0.22326}, {"primary_id": 686, "name": "Eagle Ridge Park", "lon": -112.45496277912716, "lat": 34.56928317198641, "capacity": 2242, "risk": 0.2, "main_pop": 0, "backup_pop": 2133, "effective_load": 639.9, "utilization": 0.2854148082069581}, {"primary_id": 690, "name": "Castel Court Park", "lon": -112.3560819806115, "lat": 34.5927434926776, "capacity": 5000, "risk": 0.2, "main_pop": 1832, "backup_pop": 3155, "effective_load": 2778.5, "utilization": 0.5557}, {"primary_id": 693, "name": "primary_shelter", "lon": -112.33019119296183, "lat": 34.647969092167344, "capacity": 5000, "risk": 0.2, "main_pop": 3721, "backup_pop": 2064, "effective_load": 4340.2, "utilization": 0.8680399999999999}, {"primary_id": 697, "name": "Acker Park", "lon": -112.45880455217232, "lat": 34.5342123428483, "capacity": 5000, "risk": 0.2, "main_pop": 2022, "backup_pop": 1247, "effective_load": 2396.1, "utilization": 0.47922}, {"primary_id": 698, "name": "primary_shelter", "lon": -112.45364800336486, "lat": 34.59475872465161, "capacity": 5000, "risk": 0.2, "main_pop": 2765, "backup_pop": 0, "effective_load": 2765.0, "utilization": 0.553}, {"primary_id": 700, "name": "Santa Fe Station Park", "lon": -112.34612530555763, "lat": 34.61282378163975, "capacity": 5000, "risk": 0.2, "main_pop": 4943, "backup_pop": 0, "effective_load": 4943.0, "utilization": 0.9886}, {"primary_id": 703, "name": "Centennial Park", "lon": -112.2315733212754, "lat": 34.39762231159937, "capacity": 5000, "risk": 0.2, "main_pop": 1947, "backup_pop": 2978, "effective_load": 2840.4, "utilization": 0.56808}, {"primary_id": 705, "name": "Center Street Park", "lon": -112.45960420349208, "lat": 34.74472599816189, "capacity": 5000, "risk": 0.2, "main_pop": 1748, "backup_pop": 1551, "effective_load": 2213.3, "utilization": 0.44266}, {"primary_id": 707, "name": "Montana Estates Community Park", "lon": -112.4618343076854, "lat": 34.59443981635797, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 4908, "effective_load": 1472.4, "utilization": 0.2944799999999999}, {"primary_id": 712, "name": "JAMES FAMILY PRESCOTT YMCA", "lon": -112.47861382968424, "lat": 34.558044471896864, "capacity": 5000, "risk": 0.2, "main_pop": 4437, "backup_pop": 0, "effective_load": 4437.0, "utilization": 0.8874}, {"primary_id": 741, "name": "primary_shelter", "lon": -112.31689122488586, "lat": 34.6033507343118, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 3366, "effective_load": 1009.8, "utilization": 0.20196}, {"primary_id": 742, "name": "primary_shelter", "lon": -112.31584455394444, "lat": 34.603282051747094, "capacity": 5000, "risk": 0.2, "main_pop": 3657, "backup_pop": 0, "effective_load": 3657.0, "utilization": 0.7314}, {"primary_id": 746, "name": "primary_shelter", "lon": -112.32489194997883, "lat": 34.650248949545954, "capacity": 5000, "risk": 0.2, "main_pop": 4076, "backup_pop": 0, "effective_load": 4076.0, "utilization": 0.8152}, {"primary_id": 751, "name": "primary_shelter", "lon": -112.31501486495634, "lat": 34.601545572597104, "capacity": 5000, "risk": 0.2, "main_pop": 3338, "backup_pop": 970, "effective_load": 3629.0, "utilization": 0.7258}, {"primary_id": 759, "name": "George Anderson Park", "lon": -112.2987109568086, "lat": 34.60099775574782, "capacity": 3869, "risk": 0.2, "main_pop": 2847, "backup_pop": 1653, "effective_load": 3342.9, "utilization": 0.8640217110364435}, {"primary_id": 760, "name": "primary_shelter", "lon": -112.32268746253771, "lat": 34.6345113012035, "capacity": 5000, "risk": 0.2, "main_pop": 2111, "backup_pop": 4261, "effective_load": 3389.3, "utilization": 0.67786}, {"primary_id": 765, "name": "primary_shelter", "lon": -112.34785487591056, "lat": 34.59745224859378, "capacity": 4456, "risk": 0.2, "main_pop": 2094, "backup_pop": 1832, "effective_load": 2643.6, "utilization": 0.5932675044883303}, {"primary_id": 769, "name": "Eagle Baseball Field", "lon": -112.45585465323252, "lat": 34.61782384285581, "capacity": 5000, "risk": 0.2, "main_pop": 3268, "backup_pop": 0, "effective_load": 3268.0, "utilization": 0.6536}, {"primary_id": 775, "name": "Practice Field", "lon": -112.45447350100892, "lat": 34.616396750095355, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 4784, "effective_load": 1435.2, "utilization": 0.28704}, {"primary_id": 776, "name": "primary_shelter", "lon": -112.44957526073982, "lat": 34.74690779004122, "capacity": 5000, "risk": 0.2, "main_pop": 1946, "backup_pop": 0, "effective_load": 1946.0, "utilization": 0.3892}, {"primary_id": 779, "name": "The Field", "lon": -112.54379524351552, "lat": 34.50267247185895, "capacity": 1594, "risk": 0.2, "main_pop": 0, "backup_pop": 789, "effective_load": 236.7, "utilization": 0.1484943538268507}, {"primary_id": 780, "name": "primary_shelter", "lon": -112.23868130322352, "lat": 34.503940341660126, "capacity": 3664, "risk": 0.2, "main_pop": 2160, "backup_pop": 2584, "effective_load": 2935.2, "utilization": 0.8010917030567685}, {"primary_id": 782, "name": "primary_shelter", "lon": -112.2541475699522, "lat": 34.545258360982125, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 2716, "effective_load": 814.8, "utilization": 0.16296}, {"primary_id": 791, "name": "primary_shelter", "lon": -112.2402789935026, "lat": 34.40006391818764, "capacity": 3049, "risk": 0.2, "main_pop": 1737, "backup_pop": 1947, "effective_load": 2321.1, "utilization": 0.7612659888488028}, {"primary_id": 810, "name": "William J. Stark Memorial Challenge Course", "lon": -112.49096077075431, "lat": 34.53300031510169, "capacity": 3981, "risk": 0.2, "main_pop": 1832, "backup_pop": 1832, "effective_load": 2381.6, "utilization": 0.598241647827179}, {"primary_id": 812, "name": "primary_shelter", "lon": -112.45037916389909, "lat": 34.46015959074255, "capacity": 4232, "risk": 0.2, "main_pop": 1541, "backup_pop": 653, "effective_load": 1736.9, "utilization": 0.4104206049149339}, {"primary_id": 823, "name": "primary_shelter", "lon": -112.53655743060192, "lat": 34.56648286330835, "capacity": 3229, "risk": 0.2, "main_pop": 1476, "backup_pop": 0, "effective_load": 1476.0, "utilization": 0.4571074636110251}, {"primary_id": 834, "name": "Prescott Lakes Golf Club", "lon": -112.44614569095388, "lat": 34.584264400457904, "capacity": 5000, "risk": 0.2, "main_pop": 2676, "backup_pop": 0, "effective_load": 2676.0, "utilization": 0.5352}, {"primary_id": 836, "name": "Quailwood Greens Golf Course", "lon": -112.24727552341392, "lat": 34.556820677057225, "capacity": 5000, "risk": 0.2, "main_pop": 1807, "backup_pop": 0, "effective_load": 1807.0, "utilization": 0.3614}, {"primary_id": 837, "name": "Prescott Country Club", "lon": -112.26637556929842, "lat": 34.55762726520646, "capacity": 5000, "risk": 0.2, "main_pop": 2716, "backup_pop": 0, "effective_load": 2716.0, "utilization": 0.5432}, {"primary_id": 838, "name": "Capital Canyon Club", "lon": -112.5022189189998, "lat": 34.53343319111619, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 4724, "effective_load": 1417.2, "utilization": 0.28344}, {"primary_id": 843, "name": "primary_shelter", "lon": -112.34602346050882, "lat": 34.616986333370185, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 4873, "effective_load": 1461.9, "utilization": 0.29238}, {"primary_id": 845, "name": "primary_shelter", "lon": -112.5066064869518, "lat": 34.531451165217966, "capacity": 5000, "risk": 0.2, "main_pop": 2892, "backup_pop": 0, "effective_load": 2892.0, "utilization": 0.5784}, {"primary_id": 861, "name": "primary_shelter", "lon": -112.3523281545079, "lat": 34.56120609586167, "capacity": 5000, "risk": 0.2, "main_pop": 2701, "backup_pop": 0, "effective_load": 2701.0, "utilization": 0.5402}, {"primary_id": 1011, "name": "primary_shelter", "lon": -112.3550367578352, "lat": 34.562427103694084, "capacity": 3028, "risk": 0.2, "main_pop": 0, "backup_pop": 2701, "effective_load": 810.3, "utilization": 0.2676023778071334}, {"primary_id": 1107, "name": "primary_shelter", "lon": -112.46666151242268, "lat": 34.70036081816026, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 1031, "effective_load": 309.3, "utilization": 0.06186}, {"primary_id": 1116, "name": "primary_shelter", "lon": -112.5099520466845, "lat": 34.73758831446191, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 3201, "effective_load": 960.3, "utilization": 0.1920599999999999}, {"primary_id": 1120, "name": "primary_shelter", "lon": -112.4333363363761, "lat": 34.71147041744192, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 1601, "effective_load": 480.3, "utilization": 0.0960599999999999}, {"primary_id": 1122, "name": "primary_shelter", "lon": -112.26220365051648, "lat": 34.63395317531693, "capacity": 5000, "risk": 0.2, "main_pop": 3726, "backup_pop": 0, "effective_load": 3726.0, "utilization": 0.7452}, {"primary_id": 1127, "name": "primary_shelter", "lon": -112.3501807313814, "lat": 34.731662569329295, "capacity": 5000, "risk": 0.2, "main_pop": 1290, "backup_pop": 0, "effective_load": 1290.0, "utilization": 0.258}, {"primary_id": 1128, "name": "primary_shelter", "lon": -112.33755855781943, "lat": 34.74167936289085, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 1290, "effective_load": 387.0, "utilization": 0.0774}, {"primary_id": 1138, "name": "primary_shelter", "lon": -112.4893832166726, "lat": 34.68875171040302, "capacity": 5000, "risk": 0.2, "main_pop": 1031, "backup_pop": 0, "effective_load": 1031.0, "utilization": 0.2062}, {"primary_id": 1181, "name": "primary_shelter", "lon": -112.5199888064754, "lat": 34.73667550583987, "capacity": 5000, "risk": 0.2, "main_pop": 2393, "backup_pop": 0, "effective_load": 2393.0, "utilization": 0.4786}, {"primary_id": 1182, "name": "primary_shelter", "lon": -112.49246229254996, "lat": 34.75288320863445, "capacity": 5000, "risk": 0.2, "main_pop": 2359, "backup_pop": 0, "effective_load": 2359.0, "utilization": 0.4718}, {"primary_id": 1191, "name": "primary_shelter", "lon": -112.4224391336112, "lat": 34.72752756245013, "capacity": 5000, "risk": 0.2, "main_pop": 1601, "backup_pop": 0, "effective_load": 1601.0, "utilization": 0.3202}, {"primary_id": 1192, "name": "primary_shelter", "lon": -112.25326109983064, "lat": 34.65534844001739, "capacity": 5000, "risk": 0.2, "main_pop": 0, "backup_pop": 1703, "effective_load": 510.9, "utilization": 0.1021799999999999}], "secondary": [{"secondary_id": 6, "name": "Humboldt Elementary School", "lon": -112.2390513, "lat": 34.50447, "capacity": 1000, "main_flow": 0.0, "backup_flow": 2584.0, "effective_load": 775.1999999999999, "utilization": 0.7751999999999999}, {"secondary_id": 7, "name": "Mayer Elementary School", "lon": -112.2418291, "lat": 34.4000275, "capacity": 1000, "main_flow": 0.0, "backup_flow": 2978.0, "effective_load": 893.4, "utilization": 0.8934}, {"secondary_id": 8, "name": "Mayer High School", "lon": -112.2434959, "lat": 34.4014164, "capacity": 1000, "main_flow": 0.0, "backup_flow": 2866.0, "effective_load": 859.8, "utilization": 0.8598}, {"secondary_id": 16, "name": "Bradshaw Mountain Middle School", "lon": -112.253117997528, "lat": 34.54445359324926, "capacity": 20000, "main_flow": 16455.0, "backup_flow": 8397.0, "effective_load": 18974.1, "utilization": 0.948705}, {"secondary_id": 17, "name": "secondary_shelter", "lon": -112.313717970461, "lat": 34.603561994754564, "capacity": 20000, "main_flow": 9842.0, "backup_flow": 15888.0, "effective_load": 14608.4, "utilization": 0.73042}, {"secondary_id": 18, "name": "Mile High Middle School", "lon": -112.4720425520972, "lat": 34.53795683185065, "capacity": 20000, "main_flow": 15043.0, "backup_flow": 10253.0, "effective_load": 18118.9, "utilization": 0.905945}, {"secondary_id": 21, "name": "Granville Elementary School", "lon": -112.34645998129947, "lat": 34.617647701412125, "capacity": 20000, "main_flow": 15252.0, "backup_flow": 11272.0, "effective_load": 18633.6, "utilization": 0.93168}, {"secondary_id": 22, "name": "Taylor Hicks Elementary School", "lon": -112.47262048200362, "lat": 34.57297523089784, "capacity": 20000, "main_flow": 6157.0, "backup_flow": 8204.0, "effective_load": 8618.2, "utilization": 0.43091}, {"secondary_id": 26, "name": "Chino Valley High School", "lon": -112.45125175172116, "lat": 34.747341546875155, "capacity": 20000, "main_flow": 8674.0, "backup_flow": 12368.0, "effective_load": 12384.4, "utilization": 0.61922}, {"secondary_id": 28, "name": "secondary_shelter", "lon": -112.43123732688969, "lat": 34.59006091052226, "capacity": 16890, "main_flow": 12836.0, "backup_flow": 7408.0, "effective_load": 15058.4, "utilization": 0.8915571343990527}, {"secondary_id": 30, "name": "secondary_shelter", "lon": -112.3231609690395, "lat": 34.63674555483693, "capacity": 20000, "main_flow": 16037.0, "backup_flow": 9676.0, "effective_load": 18939.8, "utilization": 0.94699}, {"secondary_id": 33, "name": "Embry-Riddle Aeronautical University", "lon": -112.45317397223292, "lat": 34.61517051229229, "capacity": 20000, "main_flow": 13445.0, "backup_flow": 10912.0, "effective_load": 16718.6, "utilization": 0.83593}, {"secondary_id": 51, "name": "Yavapai Regional Medical Center", "lon": -112.48069312362306, "lat": 34.55914038885517, "capacity": 20000, "main_flow": 12906.0, "backup_flow": 10243.0, "effective_load": 15978.9, "utilization": 0.798945}, {"secondary_id": 53, "name": "Mountain Valley Regional Rehabilitation Hospital", "lon": -112.32860465176606, "lat": 34.59626973775901, "capacity": 20000, "main_flow": 10431.0, "backup_flow": 16390.0, "effective_load": 15348.0, "utilization": 0.7674}, {"secondary_id": 78, "name": "AZ Dept. of Economic Security", "lon": -112.49216394485512, "lat": 34.54276527065465, "capacity": 6949, "main_flow": 3545.0, "backup_flow": 11184.0, "effective_load": 6900.2, "utilization": 0.9929774068211252}], "villages": [{"village_id": 0, "lon": -112.21079477797456, "lat": 34.38186065664785, "primary_id": 791, "distance_to_primary": 3378.806707785219, "backup_primary": 703, "population": 1737}, {"village_id": 1, "lon": -112.19885752216864, "lat": 34.425151616992444, "primary_id": 780, "distance_to_primary": 9491.201433058844, "backup_primary": 703, "population": 1241}, {"village_id": 2, "lon": -112.28090089175298, "lat": 34.41669902394899, "primary_id": 703, "distance_to_primary": 4997.832931620936, "backup_primary": 791, "population": 1947}, {"village_id": 3, "lon": -112.28245955186078, "lat": 34.48462872940372, "primary_id": 780, "distance_to_primary": 4550.572307568987, "backup_primary": 252, "population": 919}, {"village_id": 4, "lon": -112.2047551155916, "lat": 34.51929019903228, "primary_id": 200, "distance_to_primary": 4644.816297893447, "backup_primary": 199, "population": 1413}, {"village_id": 5, "lon": -112.25573812935708, "lat": 34.5290122637016, "primary_id": 200, "distance_to_primary": 1396.8827804978948, "backup_primary": 16, "population": 1257}, {"village_id": 6, "lon": -112.29593707634504, "lat": 34.55378194064413, "primary_id": 837, "distance_to_primary": 2740.7241128914584, "backup_primary": 782, "population": 1616}, {"village_id": 7, "lon": -112.20398872654486, "lat": 34.471890850995855, "primary_id": 252, "distance_to_primary": 4983.265295766872, "backup_primary": 780, "population": 2584}, {"village_id": 8, "lon": -112.40107572313448, "lat": 34.44214901935566, "primary_id": 812, "distance_to_primary": 4944.480875587362, "backup_primary": 244, "population": 705}, {"village_id": 9, "lon": -112.3554125196076, "lat": 34.5075801083602, "primary_id": 861, "distance_to_primary": 5969.627289892522, "backup_primary": 1011, "population": 638}, {"village_id": 10, "lon": -112.40979826819508, "lat": 34.54196202445564, "primary_id": 78, "distance_to_primary": 1189.859742535974, "backup_primary": 103, "population": 504}, {"village_id": 11, "lon": -112.349423941978, "lat": 34.55534550157094, "primary_id": 861, "distance_to_primary": 703.8480489353178, "backup_primary": 1011, "population": 1632}, {"village_id": 12, "lon": -112.36623125210458, "lat": 34.56289041682588, "primary_id": 861, "distance_to_primary": 1286.8143516121556, "backup_primary": 1011, "population": 431}, {"village_id": 13, "lon": -112.38402382087716, "lat": 34.56162796152537, "primary_id": 78, "distance_to_primary": 2489.692427623996, "backup_primary": 103, "population": 1197}, {"village_id": 14, "lon": -112.39490515443472, "lat": 34.56018472720476, "primary_id": 78, "distance_to_primary": 1533.6716418235612, "backup_primary": 103, "population": 1220}, {"village_id": 15, "lon": -112.3113916798793, "lat": 34.57350043978201, "primary_id": 468, "distance_to_primary": 2365.354022640551, "backup_primary": 574, "population": 937}, {"village_id": 16, "lon": -112.3083118381386, "lat": 34.58548272036222, "primary_id": 468, "distance_to_primary": 1821.995851163136, "backup_primary": 574, "population": 977}, {"village_id": 17, "lon": -112.35794905256158, "lat": 34.587362741494545, "primary_id": 765, "distance_to_primary": 1453.4173397317547, "backup_primary": 690, "population": 1121}, {"village_id": 18, "lon": -112.22360787990068, "lat": 34.550024468894804, "primary_id": 200, "distance_to_primary": 2545.7016586806712, "backup_primary": 16, "population": 834}, {"village_id": 19, "lon": -112.26623767857244, "lat": 34.55840625326946, "primary_id": 836, "distance_to_primary": 1745.3921234389004, "backup_primary": 16, "population": 1807}, {"village_id": 20, "lon": -112.2674905182496, "lat": 34.571326487377505, "primary_id": 837, "distance_to_primary": 1526.701413560038, "backup_primary": 782, "population": 1100}, {"village_id": 21, "lon": -112.29266604083136, "lat": 34.591996018265554, "primary_id": 759, "distance_to_primary": 1143.6972762805133, "backup_primary": 17, "population": 831}, {"village_id": 22, "lon": -112.28828755841629, "lat": 34.6055324712845, "primary_id": 759, "distance_to_primary": 1079.0616501374172, "backup_primary": 679, "population": 2016}, {"village_id": 23, "lon": -112.2421720086815, "lat": 34.61985914273386, "primary_id": 1122, "distance_to_primary": 2411.5336670929632, "backup_primary": 759, "population": 1653}, {"village_id": 24, "lon": -112.1921619832012, "lat": 34.6162924162506, "primary_id": 1122, "distance_to_primary": 6702.994604515069, "backup_primary": 16, "population": 370}, {"village_id": 25, "lon": -112.299528678022, "lat": 34.61505063562316, "primary_id": 751, "distance_to_primary": 2064.894503869284, "backup_primary": 679, "population": 1683}, {"village_id": 26, "lon": -112.2986576041953, "lat": 34.65976524835937, "primary_id": 746, "distance_to_primary": 2622.5554927036533, "backup_primary": 31, "population": 571}, {"village_id": 27, "lon": -112.2080420851156, "lat": 34.72947824482406, "primary_id": 1122, "distance_to_primary": 11719.708349612092, "backup_primary": 1192, "population": 1703}, {"village_id": 28, "lon": -112.34717368257498, "lat": 34.65541399052983, "primary_id": 693, "distance_to_primary": 1760.2299838073675, "backup_primary": 683, "population": 3721}, {"village_id": 29, "lon": -112.3123537788168, "lat": 34.685214842752664, "primary_id": 746, "distance_to_primary": 4053.5929670072233, "backup_primary": 693, "population": 2064}, {"village_id": 30, "lon": -112.42810808575418, "lat": 34.70196738258355, "primary_id": 1191, "distance_to_primary": 2889.008393042146, "backup_primary": 1120, "population": 1601}, {"village_id": 31, "lon": -112.43040587020894, "lat": 34.74772632741045, "primary_id": 776, "distance_to_primary": 1753.7927272162644, "backup_primary": 26, "population": 843}, {"village_id": 32, "lon": -112.3353049674388, "lat": 34.73160291211403, "primary_id": 1127, "distance_to_primary": 1359.4123481382007, "backup_primary": 1128, "population": 1290}, {"village_id": 33, "lon": -112.61814043322856, "lat": 34.43533217937812, "primary_id": 355, "distance_to_primary": 9995.66784715887, "backup_primary": 779, "population": 789}, {"village_id": 34, "lon": -112.51819624360188, "lat": 34.48982863297636, "primary_id": 810, "distance_to_primary": 5410.3560361942045, "backup_primary": 838, "population": 837}, {"village_id": 35, "lon": -112.50353123123422, "lat": 34.51884064810275, "primary_id": 845, "distance_to_primary": 1430.2470660056022, "backup_primary": 838, "population": 1462}, {"village_id": 36, "lon": -112.53044470736648, "lat": 34.52548614277916, "primary_id": 845, "distance_to_primary": 2282.2645263396444, "backup_primary": 838, "population": 1430}, {"village_id": 37, "lon": -112.48457892133456, "lat": 34.52730264492884, "primary_id": 665, "distance_to_primary": 1475.386412615277, "backup_primary": 810, "population": 905}, {"village_id": 38, "lon": -112.5034635950812, "lat": 34.52681771196005, "primary_id": 810, "distance_to_primary": 1335.815537940263, "backup_primary": 838, "population": 995}, {"village_id": 39, "lon": -112.52524386370708, "lat": 34.40630395093817, "primary_id": 812, "distance_to_primary": 9110.632736798254, "backup_primary": 355, "population": 836}, {"village_id": 40, "lon": -112.46915262822868, "lat": 34.46424754477643, "primary_id": 244, "distance_to_primary": 2603.3672046526904, "backup_primary": 812, "population": 653}, {"village_id": 41, "lon": -112.46247337691456, "lat": 34.517264709490945, "primary_id": 664, "distance_to_primary": 2059.8890199469306, "backup_primary": 18, "population": 795}, {"village_id": 42, "lon": -112.4766140467169, "lat": 34.524734252306104, "primary_id": 665, "distance_to_primary": 1432.5959098900992, "backup_primary": 18, "population": 416}, {"village_id": 43, "lon": -112.45269678133867, "lat": 34.527464349261265, "primary_id": 664, "distance_to_primary": 1454.1482921120012, "backup_primary": 697, "population": 1247}, {"village_id": 44, "lon": -112.468558456827, "lat": 34.527870022709145, "primary_id": 664, "distance_to_primary": 924.2744974037612, "backup_primary": 665, "population": 874}, {"village_id": 45, "lon": -112.4315650278176, "lat": 34.53244198862125, "primary_id": 697, "distance_to_primary": 2502.948146353164, "backup_primary": 181, "population": 875}, {"village_id": 46, "lon": -112.47373042404575, "lat": 34.534171333638575, "primary_id": 665, "distance_to_primary": 369.2372806246256, "backup_primary": 18, "population": 578}, {"village_id": 47, "lon": -112.44789001316109, "lat": 34.53712046106647, "primary_id": 697, "distance_to_primary": 1050.7606594796143, "backup_primary": 181, "population": 1147}, {"village_id": 48, "lon": -112.47476660459031, "lat": 34.53801034310514, "primary_id": 665, "distance_to_primary": 78.14340736532421, "backup_primary": 18, "population": 670}, {"village_id": 49, "lon": -112.4644300908016, "lat": 34.53916823717729, "primary_id": 664, "distance_to_primary": 393.6092702018866, "backup_primary": 18, "population": 1207}, {"village_id": 50, "lon": -112.45868521337805, "lat": 34.54842093776306, "primary_id": 183, "distance_to_primary": 263.7602980998516, "backup_primary": 181, "population": 1690}, {"village_id": 51, "lon": -112.4693178982978, "lat": 34.550770073340374, "primary_id": 712, "distance_to_primary": 1174.312525537929, "backup_primary": 183, "population": 930}, {"village_id": 52, "lon": -112.47625920715092, "lat": 34.56023655049263, "primary_id": 23, "distance_to_primary": 250.78466170421416, "backup_primary": 265, "population": 984}, {"village_id": 53, "lon": -112.4562163329542, "lat": 34.56938742781887, "primary_id": 23, "distance_to_primary": 2142.8798099836404, "backup_primary": 686, "population": 1504}, {"village_id": 54, "lon": -112.42919593361158, "lat": 34.564333881537564, "primary_id": 834, "distance_to_primary": 2705.4967944044474, "backup_primary": 28, "population": 717}, {"village_id": 55, "lon": -112.47815109099888, "lat": 34.57160849905699, "primary_id": 264, "distance_to_primary": 818.7762755526381, "backup_primary": 22, "population": 1603}, {"village_id": 56, "lon": -112.452004927361, "lat": 34.575655968039, "primary_id": 834, "distance_to_primary": 1097.2701857540592, "backup_primary": 686, "population": 629}, {"village_id": 57, "lon": -112.46715821804928, "lat": 34.57868505602105, "primary_id": 264, "distance_to_primary": 1249.9009955397871, "backup_primary": 22, "population": 1935}, {"village_id": 58, "lon": -112.44382611873608, "lat": 34.58087147359688, "primary_id": 834, "distance_to_primary": 432.9325866646981, "backup_primary": 28, "population": 1330}, {"village_id": 59, "lon": -112.49315722712376, "lat": 34.53458124597869, "primary_id": 665, "distance_to_primary": 1763.529652983378, "backup_primary": 810, "population": 927}, {"village_id": 60, "lon": -112.48398482476092, "lat": 34.53846454818151, "primary_id": 665, "distance_to_primary": 900.7501759096574, "backup_primary": 18, "population": 1240}, {"village_id": 61, "lon": -112.4838893374949, "lat": 34.54808281600788, "primary_id": 712, "distance_to_primary": 1208.4636467856026, "backup_primary": 265, "population": 1407}, {"village_id": 62, "lon": -112.4775431602211, "lat": 34.55294515326624, "primary_id": 712, "distance_to_primary": 575.4333116329176, "backup_primary": 265, "population": 845}, {"village_id": 63, "lon": -112.65589274728028, "lat": 34.569026298382965, "primary_id": 823, "distance_to_primary": 10930.490726175904, "backup_primary": 250, "population": 625}, {"village_id": 64, "lon": -112.49167046976018, "lat": 34.556274961496605, "primary_id": 712, "distance_to_primary": 1211.753296581779, "backup_primary": 265, "population": 1255}, {"village_id": 65, "lon": -112.5222050814995, "lat": 34.557077388636095, "primary_id": 14, "distance_to_primary": 2950.004077493166, "backup_primary": 25, "population": 1194}, {"village_id": 66, "lon": -112.50351713185135, "lat": 34.55869227848443, "primary_id": 14, "distance_to_primary": 1774.730303714896, "backup_primary": 25, "population": 805}, {"village_id": 67, "lon": -112.59592146069964, "lat": 34.570476499129214, "primary_id": 823, "distance_to_primary": 5453.676646968997, "backup_primary": 250, "population": 851}, {"village_id": 68, "lon": -112.3538099036632, "lat": 34.589674099416406, "primary_id": 690, "distance_to_primary": 399.67844402073473, "backup_primary": 765, "population": 1832}, {"village_id": 69, "lon": -112.34323644771604, "lat": 34.58962350707205, "primary_id": 765, "distance_to_primary": 967.738181475228, "backup_primary": 470, "population": 973}, {"village_id": 70, "lon": -112.31842372413452, "lat": 34.5914179036876, "primary_id": 468, "distance_to_primary": 829.257430808501, "backup_primary": 751, "population": 970}, {"village_id": 71, "lon": -112.3305180273282, "lat": 34.59308053778612, "primary_id": 468, "distance_to_primary": 429.4819554018396, "backup_primary": 470, "population": 1058}, {"village_id": 72, "lon": -112.38790776936222, "lat": 34.59901666028431, "primary_id": 313, "distance_to_primary": 3464.558438393903, "backup_primary": 690, "population": 2034}, {"village_id": 73, "lon": -112.31530495424944, "lat": 34.59967514829765, "primary_id": 751, "distance_to_primary": 209.66963150798767, "backup_primary": 17, "population": 1655}, {"village_id": 74, "lon": -112.32601681619444, "lat": 34.59967774039509, "primary_id": 62, "distance_to_primary": 36.1450527171372, "backup_primary": 61, "population": 1930}, {"village_id": 75, "lon": -112.33331111272209, "lat": 34.60439948214843, "primary_id": 678, "distance_to_primary": 682.9211705530109, "backup_primary": 61, "population": 2118}, {"village_id": 76, "lon": -112.31463768505908, "lat": 34.60708089585044, "primary_id": 742, "distance_to_primary": 436.6149475282545, "backup_primary": 17, "population": 2149}, {"village_id": 77, "lon": -112.33777775336613, "lat": 34.610466918028585, "primary_id": 678, "distance_to_primary": 151.4154977117777, "backup_primary": 843, "population": 1183}, {"village_id": 78, "lon": -112.32579972593656, "lat": 34.610427350575456, "primary_id": 62, "distance_to_primary": 1162.1472305169268, "backup_primary": 741, "population": 1858}, {"village_id": 79, "lon": -112.31426409630028, "lat": 34.612241822987414, "primary_id": 742, "distance_to_primary": 1006.726275777618, "backup_primary": 741, "population": 1508}, {"village_id": 80, "lon": -112.3455010565017, "lat": 34.61897797782962, "primary_id": 700, "distance_to_primary": 686.6956408682446, "backup_primary": 21, "population": 2224}, {"village_id": 81, "lon": -112.35301898659203, "lat": 34.611164131111565, "primary_id": 700, "distance_to_primary": 657.3153741678199, "backup_primary": 843, "population": 2719}, {"village_id": 82, "lon": -112.30925956750212, "lat": 34.62168597325599, "primary_id": 31, "distance_to_primary": 1515.2271146765363, "backup_primary": 760, "population": 2820}, {"village_id": 83, "lon": -112.3280074820576, "lat": 34.61983981987162, "primary_id": 678, "distance_to_primary": 1505.8462666489652, "backup_primary": 843, "population": 971}, {"village_id": 84, "lon": -112.3387297461495, "lat": 34.628540019312794, "primary_id": 760, "distance_to_primary": 1610.9665551545506, "backup_primary": 21, "population": 2111}, {"village_id": 85, "lon": -112.31796700453114, "lat": 34.633415924939136, "primary_id": 31, "distance_to_primary": 353.05388659262167, "backup_primary": 618, "population": 1694}, {"village_id": 86, "lon": -112.42284428160102, "lat": 34.632429702109626, "primary_id": 298, "distance_to_primary": 234.2968390441563, "backup_primary": 301, "population": 1220}, {"village_id": 87, "lon": -112.3332712964242, "lat": 34.64542472354253, "primary_id": 746, "distance_to_primary": 935.569711021904, "backup_primary": 760, "population": 1441}, {"village_id": 88, "lon": -112.47474948680106, "lat": 34.58431171993243, "primary_id": 264, "distance_to_primary": 840.1139534957352, "backup_primary": 22, "population": 337}, {"village_id": 89, "lon": -112.43542899080474, "lat": 34.59047814264235, "primary_id": 313, "distance_to_primary": 996.6776510139472, "backup_primary": 28, "population": 2440}, {"village_id": 90, "lon": -112.46151663340912, "lat": 34.58944619097162, "primary_id": 698, "distance_to_primary": 931.5317731534456, "backup_primary": 707, "population": 1348}, {"village_id": 91, "lon": -112.48031045000712, "lat": 34.590884776175926, "primary_id": 264, "distance_to_primary": 1362.456808000776, "backup_primary": 707, "population": 592}, {"village_id": 92, "lon": -112.4517016673848, "lat": 34.59242193326134, "primary_id": 698, "distance_to_primary": 315.0510473291918, "backup_primary": 707, "population": 1417}, {"village_id": 93, "lon": -112.47210927392337, "lat": 34.604892657964655, "primary_id": 681, "distance_to_primary": 825.2925983652939, "backup_primary": 707, "population": 1551}, {"village_id": 94, "lon": -112.45645689651788, "lat": 34.61874142365608, "primary_id": 769, "distance_to_primary": 115.96265719773436, "backup_primary": 775, "population": 2498}, {"village_id": 95, "lon": -112.46772920375363, "lat": 34.62718447857387, "primary_id": 769, "distance_to_primary": 1504.661357837959, "backup_primary": 775, "population": 770}, {"village_id": 96, "lon": -112.48102106733796, "lat": 34.68259367115552, "primary_id": 1138, "distance_to_primary": 1026.3836413203244, "backup_primary": 1107, "population": 1031}, {"village_id": 97, "lon": -112.46871244783264, "lat": 34.73085477731823, "primary_id": 705, "distance_to_primary": 1752.6310141698136, "backup_primary": 26, "population": 1748}, {"village_id": 98, "lon": -112.4440541567434, "lat": 34.74782795662477, "primary_id": 776, "distance_to_primary": 514.7127366460994, "backup_primary": 26, "population": 1103}, {"village_id": 99, "lon": -112.5050296449565, "lat": 34.57436718950026, "primary_id": 14, "distance_to_primary": 722.9965002239163, "backup_primary": 25, "population": 1419}, {"village_id": 100, "lon": -112.4912606599319, "lat": 34.57566119542956, "primary_id": 14, "distance_to_primary": 580.0760166138983, "backup_primary": 25, "population": 1087}, {"village_id": 101, "lon": -112.51377482852664, "lat": 34.630297201157376, "primary_id": 681, "distance_to_primary": 4311.600960878875, "backup_primary": 775, "population": 1516}, {"village_id": 102, "lon": -112.57726726609188, "lat": 34.65191487171366, "primary_id": 193, "distance_to_primary": 5415.65542523666, "backup_primary": 224, "population": 2196}, {"village_id": 103, "lon": -112.5044173025755, "lat": 34.73317843353433, "primary_id": 1182, "distance_to_primary": 2448.2632964131926, "backup_primary": 1116, "population": 808}, {"village_id": 104, "lon": -112.54488650612208, "lat": 34.72411678207222, "primary_id": 1181, "distance_to_primary": 2669.636850637377, "backup_primary": 1116, "population": 1387}, {"village_id": 105, "lon": -112.48743907874994, "lat": 34.74773803437203, "primary_id": 1182, "distance_to_primary": 733.4429778420406, "backup_primary": 705, "population": 1551}, {"village_id": 106, "lon": -112.63085796809312, "lat": 34.736293113590555, "primary_id": 1181, "distance_to_primary": 10131.082045582005, "backup_primary": 1116, "population": 1006}], "flow": [{"primary_id": 14, "secondary_id": 51, "flow": 4505.0, "distance": 2218.5660471609926}, {"primary_id": 23, "secondary_id": 51, "flow": 2488.0, "distance": 415.76920824434455}, {"primary_id": 31, "secondary_id": 30, "flow": 4514.0, "distance": 834.6049500240782}, {"primary_id": 62, "secondary_id": 53, "flow": 3788.0, "distance": 482.65996924144207}, {"primary_id": 78, "secondary_id": 28, "flow": 2921.0, "distance": 4635.684705947781}, {"primary_id": 183, "secondary_id": 22, "flow": 1690.0, "distance": 2861.569055498905}, {"primary_id": 193, "secondary_id": 33, "flow": 2196.0, "distance": 7584.605181786404}, {"primary_id": 200, "secondary_id": 16, "flow": 3504.0, "distance": 627.5975180653643}, {"primary_id": 244, "secondary_id": 78, "flow": 653.0, "distance": 9883.23263215341}, {"primary_id": 252, "secondary_id": 16, "flow": 2584.0, "distance": 4684.155833549731}, {"primary_id": 264, "secondary_id": 22, "flow": 4467.0, "distance": 979.2103853569556}, {"primary_id": 298, "secondary_id": 33, "flow": 1220.0, "distance": 3145.211474520246}, {"primary_id": 313, "secondary_id": 28, "flow": 4474.0, "distance": 624.7992683010285}, {"primary_id": 355, "secondary_id": 18, "flow": 789.0, "distance": 7663.103729351176}, {"primary_id": 468, "secondary_id": 53, "flow": 3942.0, "distance": 682.1856393989494}, {"primary_id": 664, "secondary_id": 18, "flow": 4123.0, "distance": 688.3815630768721}, {"primary_id": 665, "secondary_id": 18, "flow": 4736.0, "distance": 207.2749637902133}, {"primary_id": 678, "secondary_id": 21, "flow": 4272.0, "distance": 1219.250880300291}, {"primary_id": 681, "secondary_id": 33, "flow": 3067.0, "distance": 1754.541889328642}, {"primary_id": 690, "secondary_id": 21, "flow": 1832.0, "distance": 2905.873865662761}, {"primary_id": 693, "secondary_id": 30, "flow": 3721.0, "distance": 1403.9699699679595}, {"primary_id": 697, "secondary_id": 18, "flow": 2022.0, "distance": 1282.0803380138475}, {"primary_id": 698, "secondary_id": 28, "flow": 2765.0, "distance": 2116.8694248596203}, {"primary_id": 700, "secondary_id": 21, "flow": 4943.0, "distance": 537.2690483049504}, {"primary_id": 703, "secondary_id": 16, "flow": 1947.0, "distance": 16445.91488881115}, {"primary_id": 705, "secondary_id": 33, "flow": 1748.0, "distance": 14417.907115889531}, {"primary_id": 712, "secondary_id": 51, "flow": 4437.0, "distance": 226.0659228509812}, {"primary_id": 742, "secondary_id": 17, "flow": 3657.0, "distance": 197.10863609242205}, {"primary_id": 746, "secondary_id": 30, "flow": 4076.0, "distance": 1509.8358647091816}, {"primary_id": 751, "secondary_id": 17, "flow": 3338.0, "distance": 253.69724718394443}, {"primary_id": 759, "secondary_id": 17, "flow": 2847.0, "distance": 1402.8158841834604}, {"primary_id": 760, "secondary_id": 21, "flow": 2111.0, "distance": 2871.861817600936}, {"primary_id": 765, "secondary_id": 21, "flow": 2094.0, "distance": 2249.2576485295835}, {"primary_id": 769, "secondary_id": 33, "flow": 3268.0, "distance": 383.6976227092285}, {"primary_id": 776, "secondary_id": 33, "flow": 1946.0, "distance": 14652.212492594412}, {"primary_id": 780, "secondary_id": 16, "flow": 2160.0, "distance": 4695.001674263296}, {"primary_id": 791, "secondary_id": 16, "flow": 1737.0, "distance": 16098.479258677597}, {"primary_id": 810, "secondary_id": 18, "flow": 1832.0, "distance": 1818.4344314915927}, {"primary_id": 812, "secondary_id": 18, "flow": 1541.0, "distance": 8875.528941096229}, {"primary_id": 823, "secondary_id": 51, "flow": 1476.0, "distance": 5180.213473558559}, {"primary_id": 834, "secondary_id": 28, "flow": 2676.0, "distance": 1509.2992168103135}, {"primary_id": 836, "secondary_id": 16, "flow": 1807.0, "distance": 1475.5872454834468}, {"primary_id": 837, "secondary_id": 16, "flow": 2716.0, "distance": 1902.619481964048}, {"primary_id": 845, "secondary_id": 78, "flow": 2892.0, "distance": 1825.6019197800324}, {"primary_id": 861, "secondary_id": 53, "flow": 2701.0, "distance": 4463.038529352359}, {"primary_id": 1122, "secondary_id": 30, "flow": 3726.0, "distance": 5585.598350174109}, {"primary_id": 1127, "secondary_id": 26, "flow": 1290.0, "distance": 9398.44092450142}, {"primary_id": 1138, "secondary_id": 26, "flow": 1031.0, "distance": 7388.511449221345}, {"primary_id": 1181, "secondary_id": 26, "flow": 2393.0, "distance": 6391.628846310343}, {"primary_id": 1182, "secondary_id": 26, "flow": 2359.0, "distance": 3815.203635514427}, {"primary_id": 1191, "secondary_id": 26, "flow": 1601.0, "distance": 3433.049064483733}]};
+
+// ---------- helpers ----------
+const primaryById = Object.fromEntries(DATA.primary.map(p => [p.primary_id, p]));
+const secondaryById = Object.fromEntries(DATA.secondary.map(s => [s.secondary_id, s]));
+const villageById = Object.fromEntries(DATA.villages.map(v => [v.village_id, v]));
+
+function fmtNum(n) { return n == null ? '—' : Number(n).toLocaleString(undefined, {maximumFractionDigits: 0}); }
+function fmtPct(n) { return n == null ? '—' : (n*100).toFixed(1) + '%'; }
+function fmtDist(m) { return m == null ? '—' : m < 1000 ? `${Math.round(m)} m` : `${(m/1000).toFixed(2)} km`; }
+
+// utilization → 3 simple buckets with descriptive labels
+function utilBucket(u) {
+  if (u < 0.6) return { color: '#17a2b8', label: 'Low load',    tag: 'low' };
+  if (u < 0.85) return { color: '#ffc107', label: 'Medium load', tag: 'med' };
+  return            { color: '#dc3545', label: 'High load',   tag: 'high' };
+}
+
+// ---------- map ----------
+const allPts = [...DATA.primary, ...DATA.secondary, ...DATA.villages];
+const lats = allPts.map(p => p.lat), lons = allPts.map(p => p.lon);
+const center = [(Math.min(...lats)+Math.max(...lats))/2, (Math.min(...lons)+Math.max(...lons))/2];
+
+const map = L.map('map', { preferCanvas: true }).setView(center, 11);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 18,
+  attribution: '© OpenStreetMap contributors'
+}).addTo(map);
+
+map.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], {padding: [40, 40]});
+
+// layer groups
+const layerVillages = L.layerGroup().addTo(map);
+const layerPrimary = L.layerGroup().addTo(map);
+const layerSecondary = L.layerGroup().addTo(map);
+const layerLabels = L.layerGroup();
+const layerLines = L.layerGroup().addTo(map);
+const layerHighlight = L.layerGroup().addTo(map);
+
+// ---------- village markers (small gray dots) ----------
+const villageMarkers = {};
+DATA.villages.forEach(v => {
+  const r = Math.max(3, Math.min(10, Math.sqrt(v.population) / 12));
+  const m = L.circleMarker([v.lat, v.lon], {
+    radius: r,
+    color: '#495057',
+    weight: 1,
+    fillColor: '#adb5bd',
+    fillOpacity: 0.8,
+  }).addTo(layerVillages);
+  m.bindTooltip(`Village ${v.village_id} · pop ${fmtNum(v.population)}`);
+  m.on('click', () => showVillage(v.village_id));
+  m.on('mouseover', () => highlightVillage(v.village_id));
+  m.on('mouseout', () => clearHighlight());
+  villageMarkers[v.village_id] = m;
+});
+
+// ---------- primary shelter markers (BLUE-RINGED SQUARES, fill = utilization) ----------
+function primarySquareIcon(p) {
+  const fill = utilBucket(p.utilization).color;
+  const size = Math.max(9, Math.min(20, 2 * Math.sqrt(p.capacity) / 9));
+  return L.divIcon({
+    className: 'primary-icon',
+    html: `<div style="
+      width:${size}px; height:${size}px;
+      background:${fill};
+      border:2px solid #003d80;
+      box-sizing: border-box;
+      opacity: 0.92;
+    "></div>`,
+    iconSize: [size, size],
+    iconAnchor: [size/2, size/2],
+  });
+}
+
+const primaryMarkers = {};
+DATA.primary.forEach(p => {
+  const m = L.marker([p.lat, p.lon], { icon: primarySquareIcon(p) }).addTo(layerPrimary);
+  m.bindTooltip(`<b>${p.name}</b><br>Primary #${p.primary_id} · util ${fmtPct(p.utilization)}`, {direction:'top'});
+  m.on('click', () => showPrimary(p.primary_id));
+  primaryMarkers[p.primary_id] = m;
+
+  const lbl = L.marker([p.lat, p.lon], {
+    icon: L.divIcon({
+      className: 'shelter-label',
+      html: `<div style="background:rgba(255,255,255,.85); padding:1px 4px; border-radius:3px; font-size:10px; white-space:nowrap; border:1px solid #0d6efd; color:#003d80;">${p.name}</div>`,
+      iconAnchor: [0, -10],
+    }),
+    interactive: false,
+  });
+  layerLabels.addLayer(lbl);
+});
+
+// ---------- secondary shelter markers (LARGE RED CIRCLES, drawn on top) ----------
+const secondaryMarkers = {};
+DATA.secondary.forEach(s => {
+  const r = Math.max(10, Math.min(22, Math.sqrt(s.capacity) / 7));
+  const m = L.circleMarker([s.lat, s.lon], {
+    radius: r,
+    color: '#7a0010',
+    weight: 3,
+    fillColor: utilBucket(s.utilization).color,
+    fillOpacity: 0.9,
+  }).addTo(layerSecondary);
+  m.bindTooltip(`<b>${s.name}</b><br>Secondary #${s.secondary_id} · util ${fmtPct(s.utilization)}`, {direction:'top'});
+  m.on('click', () => showSecondary(s.secondary_id));
+  secondaryMarkers[s.secondary_id] = m;
+
+  const lbl = L.marker([s.lat, s.lon], {
+    icon: L.divIcon({
+      className: 'shelter-label',
+      html: `<div style="background:rgba(255,235,235,.95); padding:1px 4px; border-radius:3px; font-size:10px; font-weight:600; white-space:nowrap; border:1px solid #dc3545; color:#7a0010;">${s.name}</div>`,
+      iconAnchor: [0, -12],
+    }),
+    interactive: false,
+  });
+  layerLabels.addLayer(lbl);
+});
+
+// Ensure secondary shelters render on top of primaries
+layerSecondary.bringToFront && layerSecondary.bringToFront();
+
+// ---------- routes ----------
+let mode = 'all';
+
+function drawRoutes() {
+  layerLines.clearLayers();
+  if (mode === 'all' || mode === 'main') {
+    DATA.villages.forEach(v => {
+      const p = primaryById[v.primary_id];
+      if (!p) return;
+      L.polyline([[v.lat,v.lon],[p.lat,p.lon]], {
+        color: '#0d6efd', weight: 1, opacity: 0.45,
+      }).addTo(layerLines);
+    });
+  }
+  if (mode === 'all' || mode === 'backup') {
+    DATA.villages.forEach(v => {
+      const p = primaryById[v.backup_primary];
+      if (!p) return;
+      L.polyline([[v.lat,v.lon],[p.lat,p.lon]], {
+        color: '#fd7e14', weight: 1, opacity: 0.35, dashArray: '4 4',
+      }).addTo(layerLines);
+    });
+  }
+  if (mode === 'all' || mode === 'flow') {
+    DATA.flow.forEach(f => {
+      const p = primaryById[f.primary_id], s = secondaryById[f.secondary_id];
+      if (!p || !s) return;
+      const w = Math.max(1.5, Math.min(6, Math.sqrt(f.flow)/30));
+      L.polyline([[p.lat,p.lon],[s.lat,s.lon]], {
+        color: '#dc3545', weight: w, opacity: 0.6,
+      }).bindTooltip(`Flow: ${fmtNum(f.flow)} people · ${fmtDist(f.distance)}`).addTo(layerLines);
+    });
+  }
+}
+
+function setMode(m) {
+  mode = m;
+  ['all','main','backup','flow'].forEach(x => {
+    document.getElementById('m-'+x).classList.toggle('active', x===m);
+  });
+  drawRoutes();
+}
+
+// ---------- highlight on hover ----------
+function highlightVillage(vid) {
+  const v = villageById[vid]; if (!v) return;
+  layerHighlight.clearLayers();
+  const p = primaryById[v.primary_id];
+  const bp = primaryById[v.backup_primary];
+  if (p) L.polyline([[v.lat,v.lon],[p.lat,p.lon]], {color:'#0d6efd', weight: 4, opacity: 0.95}).addTo(layerHighlight);
+  if (bp) L.polyline([[v.lat,v.lon],[bp.lat,bp.lon]], {color:'#fd7e14', weight: 3, opacity: 0.95, dashArray:'6 4'}).addTo(layerHighlight);
+}
+function highlightPrimary(pid) {
+  layerHighlight.clearLayers();
+  const p = primaryById[pid]; if (!p) return;
+  // highlight all villages assigned to it (main + backup)
+  DATA.villages.forEach(v => {
+    if (v.primary_id === pid) {
+      L.polyline([[v.lat,v.lon],[p.lat,p.lon]], {color:'#0d6efd', weight: 3, opacity: 0.9}).addTo(layerHighlight);
+    } else if (v.backup_primary === pid) {
+      L.polyline([[v.lat,v.lon],[p.lat,p.lon]], {color:'#fd7e14', weight: 2, opacity: 0.85, dashArray:'6 4'}).addTo(layerHighlight);
+    }
+  });
+  // and flow to secondary
+  DATA.flow.filter(f => f.primary_id === pid).forEach(f => {
+    const s = secondaryById[f.secondary_id]; if (!s) return;
+    L.polyline([[p.lat,p.lon],[s.lat,s.lon]], {color:'#dc3545', weight: 4, opacity: 0.9}).addTo(layerHighlight);
+  });
+}
+function highlightSecondary(sid) {
+  layerHighlight.clearLayers();
+  const s = secondaryById[sid]; if (!s) return;
+  DATA.flow.filter(f => f.secondary_id === sid).forEach(f => {
+    const p = primaryById[f.primary_id]; if (!p) return;
+    L.polyline([[p.lat,p.lon],[s.lat,s.lon]], {color:'#dc3545', weight: 4, opacity: 0.9}).addTo(layerHighlight);
+  });
+}
+function clearHighlight() { layerHighlight.clearLayers(); }
+
+// ---------- info panel ----------
+function showVillage(vid) {
+  const v = villageById[vid]; if (!v) return;
+  const p = primaryById[v.primary_id];
+  const bp = primaryById[v.backup_primary];
+  document.getElementById('info').innerHTML = `
+    <div class="title">Village #${v.village_id}</div>
+    <div class="row"><span class="k">Population</span><span>${fmtNum(v.population)}</span></div>
+    <div class="row"><span class="k">Main primary</span><span>${p ? p.name : '#'+v.primary_id}</span></div>
+    <div class="row"><span class="k">Distance</span><span>${fmtDist(v.distance_to_primary)}</span></div>
+    <div class="row"><span class="k">Backup primary</span><span>${bp ? bp.name : '#'+v.backup_primary}</span></div>
+  `;
+  highlightVillage(vid);
+  map.setView([v.lat, v.lon], Math.max(map.getZoom(), 12));
+}
+function showPrimary(pid) {
+  const p = primaryById[pid]; if (!p) return;
+  const assigned = DATA.villages.filter(v => v.primary_id === pid);
+  const backupTo = DATA.villages.filter(v => v.backup_primary === pid);
+  const flowOut = DATA.flow.filter(f => f.primary_id === pid);
+  const utilPct = (p.utilization*100).toFixed(1);
+  document.getElementById('info').innerHTML = `
+    <div class="title">${p.name}</div>
+    <div style="font-size:11px;color:#6c757d;">Primary shelter #${p.primary_id}</div>
+    <div class="row"><span class="k">Capacity</span><span>${fmtNum(p.capacity)}</span></div>
+    <div class="row"><span class="k">Main population</span><span>${fmtNum(p.main_pop)}</span></div>
+    <div class="row"><span class="k">Backup population</span><span>${fmtNum(p.backup_pop)}</span></div>
+    <div class="row"><span class="k">Effective load</span><span>${fmtNum(p.effective_load)}</span></div>
+    <div class="row"><span class="k">Utilization</span><span>${utilPct}%</span></div>
+    <div class="util-bar"><div style="width:${Math.min(utilPct,100)}%; background:${utilBucket(p.utilization).color};"></div></div>
+    <div class="row" style="margin-top:6px;"><span class="k">Villages (main)</span><span>${assigned.length}</span></div>
+    <div class="row"><span class="k">Villages (backup)</span><span>${backupTo.length}</span></div>
+    ${flowOut.length ? `<div class="row"><span class="k">Routes to secondary</span><span>${flowOut.map(f => secondaryById[f.secondary_id]?.name || '#'+f.secondary_id).join(', ')}</span></div>` : ''}
+  `;
+  highlightPrimary(pid);
+  map.setView([p.lat, p.lon], Math.max(map.getZoom(), 12));
+}
+function showSecondary(sid) {
+  const s = secondaryById[sid]; if (!s) return;
+  const incoming = DATA.flow.filter(f => f.secondary_id === sid);
+  const utilPct = (s.utilization*100).toFixed(1);
+  document.getElementById('info').innerHTML = `
+    <div class="title">${s.name}</div>
+    <div style="font-size:11px;color:#6c757d;">Secondary shelter #${s.secondary_id}</div>
+    <div class="row"><span class="k">Capacity</span><span>${fmtNum(s.capacity)}</span></div>
+    <div class="row"><span class="k">Main flow in</span><span>${fmtNum(s.main_flow)}</span></div>
+    <div class="row"><span class="k">Backup flow in</span><span>${fmtNum(s.backup_flow)}</span></div>
+    <div class="row"><span class="k">Effective load</span><span>${fmtNum(s.effective_load)}</span></div>
+    <div class="row"><span class="k">Utilization</span><span>${utilPct}%</span></div>
+    <div class="util-bar"><div style="width:${Math.min(utilPct,100)}%; background:${utilBucket(s.utilization).color};"></div></div>
+    <div class="row" style="margin-top:6px;"><span class="k">Feeding primaries</span><span>${incoming.length}</span></div>
+  `;
+  highlightSecondary(sid);
+  map.setView([s.lat, s.lon], Math.max(map.getZoom(), 12));
+}
+
+// ---------- toggles ----------
+document.getElementById('t-villages').addEventListener('change', e => {
+  if (e.target.checked) layerVillages.addTo(map); else map.removeLayer(layerVillages);
+});
+document.getElementById('t-primary').addEventListener('change', e => {
+  if (e.target.checked) layerPrimary.addTo(map); else map.removeLayer(layerPrimary);
+});
+document.getElementById('t-secondary').addEventListener('change', e => {
+  if (e.target.checked) layerSecondary.addTo(map); else map.removeLayer(layerSecondary);
+});
+document.getElementById('t-labels').addEventListener('change', e => {
+  if (e.target.checked) layerLabels.addTo(map); else map.removeLayer(layerLabels);
+});
+
+// ---------- stats ----------
+document.getElementById('s-villages').textContent = DATA.villages.length;
+document.getElementById('s-pop').textContent = fmtNum(DATA.villages.reduce((s,v)=>s+v.population,0));
+document.getElementById('s-prim').textContent = DATA.primary.length;
+document.getElementById('s-sec').textContent = DATA.secondary.length;
+
+drawRoutes();
+</script>
+</body>
+</html>
